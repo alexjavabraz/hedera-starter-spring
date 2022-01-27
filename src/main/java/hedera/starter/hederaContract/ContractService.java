@@ -4,22 +4,17 @@ import com.hedera.hashgraph.sdk.Client;
 import com.hedera.hashgraph.sdk.Hbar;
 import com.hedera.hashgraph.sdk.HederaStatusException;
 import com.hedera.hashgraph.sdk.contract.*;
-import com.hedera.hashgraph.sdk.file.FileAppendTransaction;
-import com.hedera.hashgraph.sdk.file.FileCreateTransaction;
 import com.hedera.hashgraph.sdk.file.FileId;
 import hedera.starter.dto.ContractInfoDTO;
 import hedera.starter.hederaContract.models.ContractCall;
 import hedera.starter.utilities.EnvUtils;
 import hedera.starter.utilities.HederaClient;
-import hedera.starter.utilities.Utils;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.Instant;
 
-import static hedera.starter.utilities.Utils.FILE_PART_SIZE;
+import static hedera.starter.utilities.Utils.createBytecodeFile;
 
 @Service
 public class ContractService {
@@ -36,7 +31,7 @@ public class ContractService {
 
     //Create contracts with a bytecode.
     public String createContractWithoutParam(String bytecode, long gasValue) throws HederaStatusException {
-        FileId bytecodeFile = createBytecodeFile(bytecode);
+        FileId bytecodeFile = createBytecodeFile(bytecode, client);
         var contractTxId =
                 new ContractCreateTransaction()
                         .setBytecodeFileId(bytecodeFile)
@@ -52,7 +47,7 @@ public class ContractService {
 
     //create contract with bytecode that has 1 string parameter in its constructor.
     public String createContractWithParam(String bytecode, String constructorParameterValue, long gasValue) throws HederaStatusException {
-        FileId bytecodeFile = createBytecodeFile(bytecode);
+        FileId bytecodeFile = createBytecodeFile(bytecode, client);
         var contractTxId =
                 new ContractCreateTransaction()
                         .setBytecodeFileId(bytecodeFile)
@@ -181,57 +176,6 @@ public class ContractService {
     }
 
 
-    //HELPER- create a bytecode file.
-    private FileId createBytecodeFile(String byteCodeHex) throws HederaStatusException {
-        byte[] byteCode = byteCodeHex.getBytes();
 
-        int numParts = byteCode.length / FILE_PART_SIZE;
-        int remainder = byteCode.length % FILE_PART_SIZE;
-        // add in 5k chunks
-        byte[] firstPartBytes;
-        if (byteCode.length <= FILE_PART_SIZE) {
-            firstPartBytes = byteCode;
-            remainder = 0;
-        } else {
-            firstPartBytes = Utils.copyBytes(0, FILE_PART_SIZE, byteCode);
-        }
-
-        // create the contract's bytecode file
-        var fileTxId =
-                new FileCreateTransaction()
-                        .setExpirationTime(Instant.now().plus(Duration.ofMillis(7890000000L)))
-                        // Use the same key as the operator to "own" this file
-                        .addKey(EnvUtils.getOperatorKey().publicKey)
-                        .setContents(firstPartBytes)
-                        .setMaxTransactionFee(new Hbar(5))
-                        .execute(client);
-
-        var fileReceipt = fileTxId.getReceipt(client);
-        FileId newFileId = fileReceipt.getFileId();
-
-        System.out.println("Bytecode file ID: " + newFileId);
-
-        // add remaining chunks
-        // append the rest of the parts
-        for (int i = 1; i < numParts; i++) {
-            byte[] partBytes = Utils.copyBytes(i * FILE_PART_SIZE, FILE_PART_SIZE, byteCode);
-            new FileAppendTransaction()
-                    .setFileId(newFileId)
-                    .setMaxTransactionFee(new Hbar(5))
-                    .setContents(partBytes)
-                    .execute(client);
-        }
-        // appending remaining data
-        if (remainder > 0) {
-            byte[] partBytes = Utils.copyBytes(numParts * FILE_PART_SIZE, remainder, byteCode);
-            new FileAppendTransaction()
-                    .setFileId(newFileId)
-                    .setMaxTransactionFee(new Hbar(5))
-                    .setContents(partBytes)
-                    .execute(client);
-        }
-
-        return newFileId;
-    }
 
 }
